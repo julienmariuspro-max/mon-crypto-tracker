@@ -2,6 +2,7 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mon Crypto Tracker Pro</title>
     <style>
         :root {
@@ -22,41 +23,71 @@
 
         body { 
             font-family: 'Segoe UI', sans-serif; 
-            margin: 40px; 
+            margin: 15px; /* Marges réduites pour mobile */
             background-color: var(--bg-color); 
             color: var(--text-color);
             transition: 0.3s;
         }
 
+        h1 { text-align: center; font-size: 1.5rem; }
+
         #summary, #add-crypto-form { 
-            margin-bottom: 20px; padding: 20px; 
+            margin-bottom: 20px; padding: 15px; 
             background: var(--card-bg); border-radius: 12px; 
             box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
         }
 
+        /* Conteneur pour permettre le défilement horizontal du tableau sur petit écran */
+        .table-container {
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            background: var(--card-bg);
+            border-radius: 12px;
+        }
+
         table { 
             width: 100%; border-collapse: collapse; 
-            background: var(--card-bg); border-radius: 12px; 
-            overflow: hidden; 
+            min-width: 600px; /* Force une largeur minimale pour garder les colonnes lisibles */
         }
 
-        th, td { padding: 15px; border-bottom: 1px solid var(--border-color); text-align: left; }
+        th, td { padding: 12px; border-bottom: 1px solid var(--border-color); text-align: left; font-size: 14px; }
         th { background-color: var(--header-bg); color: white; }
 
+        /* Formulaire vertical sur mobile, horizontal sur PC */
+        .form-group { display: flex; flex-direction: column; }
+        
         input { 
-            padding: 10px; margin: 5px; border: 1px solid #ccc; 
+            padding: 12px; margin: 5px 0; border: 1px solid #ccc; 
             border-radius: 5px; background: var(--card-bg); color: var(--text-color);
+            width: 100%; box-sizing: border-box; font-size: 16px; /* 16px évite le zoom auto sur iPhone */
         }
 
-        button { padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; }
+        button { 
+            padding: 12px 20px; border-radius: 5px; border: none; 
+            cursor: pointer; font-weight: bold; width: 100%; margin-top: 10px;
+        }
+
         .btn-add { background-color: #28a745; color: white; }
-        .btn-refresh { background-color: #007bff; color: white; margin-bottom: 10px; }
-        .delete-btn { background: none; border: none; font-size: 18px; color: #e74c3c; }
+        .btn-refresh { background-color: #007bff; color: white; margin-bottom: 15px; }
+        #theme-toggle { background-color: #6c757d; color: white; margin-bottom: 15px; }
+        .delete-btn { background: none; border: none; font-size: 18px; color: #e74c3c; width: auto; }
+
+        /* Ajustements pour écrans d'ordinateur */
+        @media (min-width: 768px) {
+            body { margin: 40px; }
+            h1 { font-size: 2rem; }
+            .form-group { flex-direction: row; flex-wrap: wrap; align-items: center; }
+            input { width: auto; margin-right: 10px; }
+            button { width: auto; }
+            .table-container { overflow-x: visible; }
+            table { min-width: 100%; }
+        }
     </style>
 </head>
-<body>
+<body class="dark-mode">
 
-    <button id="theme-toggle" style="margin-bottom: 20px;">🌙 Mode Sombre</button>
+    <button id="theme-toggle">☀️ Mode Clair</button>
     <h1>🚀 Mon Portefeuille Crypto</h1>
 
     <div id="summary">
@@ -65,38 +96,41 @@
     </div>
 
     <div id="add-crypto-form">
-        <h3>Ajouter ou Modifier une Position</h3>
-        <input type="text" id="new-id" list="crypto-suggestions" placeholder="Chercher (ex: bitcoin)">
-        <datalist id="crypto-suggestions"></datalist>
-        
-        <input type="text" id="new-nom" placeholder="Nom (ex: Bitcoin)">
-        <input type="number" id="new-quantite" placeholder="Quantité" step="any">
-        <input type="number" id="new-prix" placeholder="Prix d'achat (€)" step="any">
-        <button id="add-btn" class="btn-add">Ajouter au Portfolio</button>
+        <h3>Ajouter ou Modifier</h3>
+        <div class="form-group">
+            <input type="text" id="new-id" list="crypto-suggestions" placeholder="ID (ex: bitcoin)">
+            <datalist id="crypto-suggestions"></datalist>
+            <input type="text" id="new-nom" placeholder="Nom (ex: Bitcoin)">
+            <input type="number" id="new-quantite" placeholder="Quantité" step="any">
+            <input type="number" id="new-prix" placeholder="Prix d'achat (€)" step="any">
+            <button id="add-btn" class="btn-add">Ajouter</button>
+        </div>
     </div>
 
     <button id="refresh-btn" class="btn-refresh">Actualiser les prix 🔄</button>
 
-    <table>
-        <thead>
-            <tr>
-                <th>Crypto</th>
-                <th>Quantité</th>
-                <th>Prix d'achat Moyen</th>
-                <th>Valeur Actuelle</th>
-                <th>Évolution (%)</th>
-                <th>Action</th>
-            </tr>
-        </thead>
-        <tbody id="portfolio-table"></tbody>
-    </table>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Crypto</th>
+                    <th>Quantité</th>
+                    <th>Prix Moyen</th>
+                    <th>Valeur</th>
+                    <th>Évolution</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="portfolio-table"></tbody>
+        </table>
+    </div>
 
     <script>
         let mesCryptos = JSON.parse(localStorage.getItem('monPortfolio')) || [];
 
         function sauvegarder() { localStorage.setItem('monPortfolio', JSON.stringify(mesCryptos)); }
 
-        // --- 1. RECHERCHE PRÉDICTIVE ---
+        // --- RECHERCHE ---
         const idInput = document.getElementById('new-id');
         const suggestionsList = document.getElementById('crypto-suggestions');
 
@@ -116,14 +150,13 @@
             } catch (e) { console.error("Erreur recherche"); }
         });
 
-        // --- 2. AFFICHAGE ET CALCULS ---
+        // --- AFFICHAGE ---
         async function chargerPortefeuille() {
             const tableCorpus = document.getElementById('portfolio-table');
-            let sommeTotale = 0;
-            let sommeInvestie = 0;
+            let sommeTotale = 0, sommeInvestie = 0;
 
             if (mesCryptos.length === 0) {
-                tableCorpus.innerHTML = "<tr><td colspan='6' style='text-align:center;'>Portefeuille vide.</td></tr>";
+                tableCorpus.innerHTML = "<tr><td colspan='6' style='text-align:center;'>Vide.</td></tr>";
                 document.getElementById('total-valeur').innerText = "0 €";
                 document.getElementById('total-profit').innerText = "0 €";
                 return;
@@ -134,7 +167,6 @@
                 const response = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=eur&ids=${ids}`);
                 const data = await response.json();
 
-                // Tri par valeur totale
                 mesCryptos.sort((a, b) => {
                     const prixA = data.find(i => i.id === a.id)?.current_price || 0;
                     const prixB = data.find(i => i.id === b.id)?.current_price || 0;
@@ -156,14 +188,13 @@
                         <tr>
                             <td><img src="${info?.image}" width="20" style="vertical-align:middle; margin-right:8px;">${crypto.nom}</td>
                             <td>${crypto.quantite}</td>
-                            <td>${crypto.prixAchat.toFixed(2)} €</td>
-                            <td><strong>${valeur.toFixed(2)} €</strong></td>
+                            <td>${crypto.prixAchat.toFixed(2)}€</td>
+                            <td><strong>${valeur.toFixed(2)}€</strong></td>
                             <td style="color:${evo >= 0 ? '#2ecc71' : '#e74c3c'}; font-weight:bold;">${evo >= 0 ? '+' : ''}${evo}%</td>
                             <td><button class="delete-btn" onclick="supprimer(${mesCryptos.indexOf(crypto)})">🗑️</button></td>
                         </tr>`;
                 });
 
-                // --- LOGIQUE DE COULEUR DU PROFIT GLOBAL ---
                 const totalValEl = document.getElementById('total-valeur');
                 const totalProfEl = document.getElementById('total-profit');
                 const profitGlobal = (sommeTotale - sommeInvestie).toFixed(2);
@@ -175,7 +206,7 @@
             } catch (e) { console.error("Erreur API"); }
         }
 
-        // --- 3. AJOUT / MODIFICATION ---
+        // --- AJOUT ---
         document.getElementById('add-btn').addEventListener('click', () => {
             const id = idInput.value.toLowerCase().trim();
             const nom = document.getElementById('new-nom').value.trim();
@@ -198,7 +229,7 @@
         });
 
         function supprimer(index) {
-            if(confirm("Supprimer ?")) { mesCryptos.splice(index, 1); sauvegarder(); chargerPortefeuille(); }
+            if(confirm("Supprimer cette position ?")) { mesCryptos.splice(index, 1); sauvegarder(); chargerPortefeuille(); }
         }
 
         document.getElementById('theme-toggle').addEventListener('click', function() {
@@ -207,7 +238,6 @@
         });
 
         document.getElementById('refresh-btn').addEventListener('click', chargerPortefeuille);
-        
         chargerPortefeuille();
     </script>
 </body>
