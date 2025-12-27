@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Mon Crypto Tracker Pro</title>
+    <style>
+        :root {
+            --bg-color: #f4f7f6;
+            --card-bg: #ffffff;
+            --text-color: #333333;
+            --border-color: #eeeeee;
+            --header-bg: #34495e;
+        }
+
+        body.dark-mode {
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --text-color: #e0e0e0;
+            --border-color: #333333;
+            --header-bg: #000000;
+        }
+
+        body { 
+            font-family: 'Segoe UI', sans-serif; 
+            margin: 40px; 
+            background-color: var(--bg-color); 
+            color: var(--text-color);
+            transition: 0.3s;
+        }
+
+        #summary, #add-crypto-form { 
+            margin-bottom: 20px; padding: 20px; 
+            background: var(--card-bg); border-radius: 12px; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
+        }
+
+        table { 
+            width: 100%; border-collapse: collapse; 
+            background: var(--card-bg); border-radius: 12px; 
+            overflow: hidden; 
+        }
+
+        th, td { padding: 15px; border-bottom: 1px solid var(--border-color); text-align: left; }
+        th { background-color: var(--header-bg); color: white; }
+
+        input { 
+            padding: 10px; margin: 5px; border: 1px solid #ccc; 
+            border-radius: 5px; background: var(--card-bg); color: var(--text-color);
+        }
+
+        button { padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; }
+        .btn-add { background-color: #28a745; color: white; }
+        .btn-refresh { background-color: #007bff; color: white; margin-bottom: 10px; }
+        .delete-btn { background: none; border: none; font-size: 18px; color: #e74c3c; }
+    </style>
+</head>
+<body>
+
+    <button id="theme-toggle" style="margin-bottom: 20px;">🌙 Mode Sombre</button>
+    <h1>🚀 Mon Portefeuille Crypto</h1>
+
+    <div id="summary">
+        <h2>Valeur Totale : <span id="total-valeur">0 €</span></h2>
+        <p>Profit/Perte Global : <span id="total-profit" style="font-weight: bold;">0 €</span></p>
+    </div>
+
+    <div id="add-crypto-form">
+        <h3>Ajouter ou Modifier une Position</h3>
+        <input type="text" id="new-id" list="crypto-suggestions" placeholder="Chercher (ex: bitcoin)">
+        <datalist id="crypto-suggestions"></datalist>
+        
+        <input type="text" id="new-nom" placeholder="Nom (ex: Bitcoin)">
+        <input type="number" id="new-quantite" placeholder="Quantité" step="any">
+        <input type="number" id="new-prix" placeholder="Prix d'achat (€)" step="any">
+        <button id="add-btn" class="btn-add">Ajouter au Portfolio</button>
+    </div>
+
+    <button id="refresh-btn" class="btn-refresh">Actualiser les prix 🔄</button>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Crypto</th>
+                <th>Quantité</th>
+                <th>Prix d'achat Moyen</th>
+                <th>Valeur Actuelle</th>
+                <th>Évolution (%)</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody id="portfolio-table"></tbody>
+    </table>
+
+    <script>
+        let mesCryptos = JSON.parse(localStorage.getItem('monPortfolio')) || [];
+
+        function sauvegarder() { localStorage.setItem('monPortfolio', JSON.stringify(mesCryptos)); }
+
+        // --- 1. RECHERCHE PRÉDICTIVE ---
+        const idInput = document.getElementById('new-id');
+        const suggestionsList = document.getElementById('crypto-suggestions');
+
+        idInput.addEventListener('input', async () => {
+            const query = idInput.value.trim();
+            if (query.length < 2) return;
+            try {
+                const res = await fetch(`https://api.coingecko.com/api/v3/search?query=${query}`);
+                const data = await res.json();
+                suggestionsList.innerHTML = "";
+                data.coins.slice(0, 5).forEach(coin => {
+                    const option = document.createElement('option');
+                    option.value = coin.id;
+                    option.label = `${coin.name} (${coin.symbol})`;
+                    suggestionsList.appendChild(option);
+                });
+            } catch (e) { console.error("Erreur recherche"); }
+        });
+
+        // --- 2. AFFICHAGE ET CALCULS ---
+        async function chargerPortefeuille() {
+            const tableCorpus = document.getElementById('portfolio-table');
+            let sommeTotale = 0;
+            let sommeInvestie = 0;
+
+            if (mesCryptos.length === 0) {
+                tableCorpus.innerHTML = "<tr><td colspan='6' style='text-align:center;'>Portefeuille vide.</td></tr>";
+                document.getElementById('total-valeur').innerText = "0 €";
+                document.getElementById('total-profit').innerText = "0 €";
+                return;
+            }
+
+            try {
+                const ids = mesCryptos.map(c => c.id).join(',');
+                const response = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=eur&ids=${ids}`);
+                const data = await response.json();
+
+                // Tri par valeur totale
+                mesCryptos.sort((a, b) => {
+                    const prixA = data.find(i => i.id === a.id)?.current_price || 0;
+                    const prixB = data.find(i => i.id === b.id)?.current_price || 0;
+                    return (prixB * b.quantite) - (prixA * a.quantite);
+                });
+
+                tableCorpus.innerHTML = "";
+                mesCryptos.forEach(crypto => {
+                    const info = data.find(i => i.id === crypto.id);
+                    const prixActuel = info ? info.current_price : 0;
+                    const valeur = crypto.quantite * prixActuel;
+                    const invest = crypto.quantite * crypto.prixAchat;
+                    const evo = (((prixActuel - crypto.prixAchat) / crypto.prixAchat) * 100).toFixed(2);
+                    
+                    sommeTotale += valeur;
+                    sommeInvestie += invest;
+
+                    tableCorpus.innerHTML += `
+                        <tr>
+                            <td><img src="${info?.image}" width="20" style="vertical-align:middle; margin-right:8px;">${crypto.nom}</td>
+                            <td>${crypto.quantite}</td>
+                            <td>${crypto.prixAchat.toFixed(2)} €</td>
+                            <td><strong>${valeur.toFixed(2)} €</strong></td>
+                            <td style="color:${evo >= 0 ? '#2ecc71' : '#e74c3c'}; font-weight:bold;">${evo >= 0 ? '+' : ''}${evo}%</td>
+                            <td><button class="delete-btn" onclick="supprimer(${mesCryptos.indexOf(crypto)})">🗑️</button></td>
+                        </tr>`;
+                });
+
+                // --- LOGIQUE DE COULEUR DU PROFIT GLOBAL ---
+                const totalValEl = document.getElementById('total-valeur');
+                const totalProfEl = document.getElementById('total-profit');
+                const profitGlobal = (sommeTotale - sommeInvestie).toFixed(2);
+
+                totalValEl.innerText = sommeTotale.toLocaleString() + " €";
+                totalProfEl.innerText = (profitGlobal >= 0 ? "+" : "") + profitGlobal + " €";
+                totalProfEl.style.color = profitGlobal >= 0 ? "#2ecc71" : "#e74c3c";
+
+            } catch (e) { console.error("Erreur API"); }
+        }
+
+        // --- 3. AJOUT / MODIFICATION ---
+        document.getElementById('add-btn').addEventListener('click', () => {
+            const id = idInput.value.toLowerCase().trim();
+            const nom = document.getElementById('new-nom').value.trim();
+            const qte = parseFloat(document.getElementById('new-quantite').value);
+            const prix = parseFloat(document.getElementById('new-prix').value);
+
+            if(id && nom && qte && prix) {
+                const existante = mesCryptos.find(c => c.id === id);
+                if (existante) {
+                    const totalQte = existante.quantite + qte;
+                    existante.prixAchat = ((existante.quantite * existante.prixAchat) + (qte * prix)) / totalQte;
+                    existante.quantite = totalQte;
+                } else {
+                    mesCryptos.push({ id, nom, quantite: qte, prixAchat: prix });
+                }
+                sauvegarder(); chargerPortefeuille();
+                idInput.value = ""; document.getElementById('new-nom').value = "";
+                document.getElementById('new-quantite').value = ""; document.getElementById('new-prix').value = "";
+            }
+        });
+
+        function supprimer(index) {
+            if(confirm("Supprimer ?")) { mesCryptos.splice(index, 1); sauvegarder(); chargerPortefeuille(); }
+        }
+
+        document.getElementById('theme-toggle').addEventListener('click', function() {
+            document.body.classList.toggle('dark-mode');
+            this.innerText = document.body.classList.contains('dark-mode') ? "☀️ Mode Clair" : "🌙 Mode Sombre";
+        });
+
+        document.getElementById('refresh-btn').addEventListener('click', chargerPortefeuille);
+        
+        chargerPortefeuille();
+    </script>
+</body>
+</html>
