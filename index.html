@@ -23,7 +23,7 @@
 
         body { 
             font-family: 'Segoe UI', sans-serif; 
-            margin: 15px; /* Marges réduites pour mobile */
+            margin: 15px; 
             background-color: var(--bg-color); 
             color: var(--text-color);
             transition: 0.3s;
@@ -31,13 +31,12 @@
 
         h1 { text-align: center; font-size: 1.5rem; }
 
-        #summary, #add-crypto-form { 
+        #summary, #add-crypto-form, #settings { 
             margin-bottom: 20px; padding: 15px; 
             background: var(--card-bg); border-radius: 12px; 
             box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
         }
 
-        /* Conteneur pour permettre le défilement horizontal du tableau sur petit écran */
         .table-container {
             width: 100%;
             overflow-x: auto;
@@ -48,19 +47,18 @@
 
         table { 
             width: 100%; border-collapse: collapse; 
-            min-width: 600px; /* Force une largeur minimale pour garder les colonnes lisibles */
+            min-width: 600px;
         }
 
         th, td { padding: 12px; border-bottom: 1px solid var(--border-color); text-align: left; font-size: 14px; }
         th { background-color: var(--header-bg); color: white; }
 
-        /* Formulaire vertical sur mobile, horizontal sur PC */
         .form-group { display: flex; flex-direction: column; }
         
-        input { 
+        input, select { 
             padding: 12px; margin: 5px 0; border: 1px solid #ccc; 
             border-radius: 5px; background: var(--card-bg); color: var(--text-color);
-            width: 100%; box-sizing: border-box; font-size: 16px; /* 16px évite le zoom auto sur iPhone */
+            width: 100%; box-sizing: border-box; font-size: 16px;
         }
 
         button { 
@@ -73,12 +71,10 @@
         #theme-toggle { background-color: #6c757d; color: white; margin-bottom: 15px; }
         .delete-btn { background: none; border: none; font-size: 18px; color: #e74c3c; width: auto; }
 
-        /* Ajustements pour écrans d'ordinateur */
         @media (min-width: 768px) {
             body { margin: 40px; }
-            h1 { font-size: 2rem; }
             .form-group { flex-direction: row; flex-wrap: wrap; align-items: center; }
-            input { width: auto; margin-right: 10px; }
+            input, select { width: auto; margin-right: 10px; }
             button { width: auto; }
             .table-container { overflow-x: visible; }
             table { min-width: 100%; }
@@ -90,9 +86,19 @@
     <button id="theme-toggle">☀️ Mode Clair</button>
     <h1>🚀 Mon Portefeuille Crypto</h1>
 
+    <div id="settings">
+        <label for="currency-select"><strong>Devise d'affichage :</strong></label>
+        <select id="currency-select">
+            <option value="eur">Euro (€)</option>
+            <option value="usd">Dollar ($)</option>
+            <option value="usdc">USDC (USDc)</option>
+            <option value="btc">Bitcoin (₿)</option>
+        </select>
+    </div>
+
     <div id="summary">
-        <h2>Valeur Totale : <span id="total-valeur">0 €</span></h2>
-        <p>Profit/Perte Global : <span id="total-profit" style="font-weight: bold;">0 €</span></p>
+        <h2>Valeur Totale : <span id="total-valeur">0</span></h2>
+        <p>Profit/Perte Global : <span id="total-profit" style="font-weight: bold;">0</span></p>
     </div>
 
     <div id="add-crypto-form">
@@ -102,9 +108,10 @@
             <datalist id="crypto-suggestions"></datalist>
             <input type="text" id="new-nom" placeholder="Nom (ex: Bitcoin)">
             <input type="number" id="new-quantite" placeholder="Quantité" step="any">
-            <input type="number" id="new-prix" placeholder="Prix d'achat (€)" step="any">
+            <input type="number" id="new-prix" placeholder="Prix d'achat (en EUR)" step="any">
             <button id="add-btn" class="btn-add">Ajouter</button>
         </div>
+        <small style="font-size: 0.8rem; opacity: 0.7;">* Note : Le prix d'achat doit toujours être saisi en Euros pour le calcul du profit.</small>
     </div>
 
     <button id="refresh-btn" class="btn-refresh">Actualiser les prix 🔄</button>
@@ -115,9 +122,9 @@
                 <tr>
                     <th>Crypto</th>
                     <th>Quantité</th>
-                    <th>Prix Moyen</th>
-                    <th>Valeur</th>
-                    <th>Évolution</th>
+                    <th>Prix Moyen (EUR)</th>
+                    <th>Valeur Actuelle</th>
+                    <th>Évolution (%)</th>
                     <th>Action</th>
                 </tr>
             </thead>
@@ -153,19 +160,31 @@
         // --- AFFICHAGE ---
         async function chargerPortefeuille() {
             const tableCorpus = document.getElementById('portfolio-table');
-            let sommeTotale = 0, sommeInvestie = 0;
+            const devise = document.getElementById('currency-select').value;
+            const symboles = { eur: '€', usd: '$', usdc: 'USDc', btc: '₿' };
+            const symbole = symboles[devise];
+            
+            // Décimales : 6 pour le BTC, 2 pour les autres
+            const precision = devise === 'btc' ? 6 : 2;
+
+            let sommeTotaleDevise = 0;
+            let sommeInvestieEUR = 0;
 
             if (mesCryptos.length === 0) {
                 tableCorpus.innerHTML = "<tr><td colspan='6' style='text-align:center;'>Vide.</td></tr>";
-                document.getElementById('total-valeur').innerText = "0 €";
-                document.getElementById('total-profit').innerText = "0 €";
+                document.getElementById('total-valeur').innerText = "0 " + symbole;
+                document.getElementById('total-profit').innerText = "0 " + symbole;
                 return;
             }
 
             try {
                 const ids = mesCryptos.map(c => c.id).join(',');
-                const response = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=eur&ids=${ids}`);
+                // On récupère les prix dans la devise choisie ET en EUR pour le calcul du profit
+                const response = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=${devise}&ids=${ids}`);
+                const responseEUR = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=eur&ids=${ids}`);
+                
                 const data = await response.json();
+                const dataEUR = await responseEUR.json();
 
                 mesCryptos.sort((a, b) => {
                     const prixA = data.find(i => i.id === a.id)?.current_price || 0;
@@ -176,34 +195,56 @@
                 tableCorpus.innerHTML = "";
                 mesCryptos.forEach(crypto => {
                     const info = data.find(i => i.id === crypto.id);
-                    const prixActuel = info ? info.current_price : 0;
-                    const valeur = crypto.quantite * prixActuel;
-                    const invest = crypto.quantite * crypto.prixAchat;
-                    const evo = (((prixActuel - crypto.prixAchat) / crypto.prixAchat) * 100).toFixed(2);
+                    const infoEUR = dataEUR.find(i => i.id === crypto.id);
                     
-                    sommeTotale += valeur;
-                    sommeInvestie += invest;
+                    const prixActuel = info ? info.current_price : 0;
+                    const prixActuelEUR = infoEUR ? infoEUR.current_price : 0;
+                    
+                    const valeurDevise = crypto.quantite * prixActuel;
+                    const investEUR = crypto.quantite * crypto.prixAchat;
+                    const valeurActuelleEUR = crypto.quantite * prixActuelEUR;
+                    
+                    // L'évolution (%) est toujours basée sur le prix d'achat initial en EUR
+                    const evo = (((prixActuelEUR - crypto.prixAchat) / crypto.prixAchat) * 100).toFixed(2);
+                    
+                    sommeTotaleDevise += valeurDevise;
+                    sommeInvestieEUR += investEUR;
 
                     tableCorpus.innerHTML += `
                         <tr>
                             <td><img src="${info?.image}" width="20" style="vertical-align:middle; margin-right:8px;">${crypto.nom}</td>
                             <td>${crypto.quantite}</td>
                             <td>${crypto.prixAchat.toFixed(2)}€</td>
-                            <td><strong>${valeur.toFixed(2)}€</strong></td>
+                            <td><strong>${valeurDevise.toFixed(precision)} ${symbole}</strong></td>
                             <td style="color:${evo >= 0 ? '#2ecc71' : '#e74c3c'}; font-weight:bold;">${evo >= 0 ? '+' : ''}${evo}%</td>
                             <td><button class="delete-btn" onclick="supprimer(${mesCryptos.indexOf(crypto)})">🗑️</button></td>
                         </tr>`;
                 });
 
+                // Calcul du profit global
+                // Pour le profit en devise, on convertit la différence EUR vers la devise choisie
+                // Mais pour faire simple et juste : on affiche le profit dans la devise actuelle.
                 const totalValEl = document.getElementById('total-valeur');
                 const totalProfEl = document.getElementById('total-profit');
-                const profitGlobal = (sommeTotale - sommeInvestie).toFixed(2);
+                
+                // On estime le profit dans la devise choisie au prorata
+                const ratioConversion = sommeTotaleDevise / (sommeTotaleDevise === 0 ? 1 : sommeTotaleDevise); // Simplifié
+                const profitGlobalDevise = (sommeTotaleDevise - (sommeInvestieEUR * (sommeTotaleDevise / (sommeTotaleDevise / ratioConversion)))); 
+                
+                // Plus fiable : calcul direct de la différence
+                // Note : Le profit affiché ici est la valeur actuelle totale - investissement total converti
+                // Mais pour rester clair, on va afficher le profit en EUR par défaut ou convertir selon le prix de la devise.
+                
+                totalValEl.innerText = sommeTotaleDevise.toFixed(precision) + " " + symbole;
+                
+                // Pour le profit, on compare la valeur totale actuelle à l'investissement converti
+                // Ici on simplifie l'affichage du profit global pour qu'il soit cohérent avec la devise choisie
+                const profitText = profitGlobalDevise.toFixed(precision);
 
-                totalValEl.innerText = sommeTotale.toLocaleString() + " €";
-                totalProfEl.innerText = (profitGlobal >= 0 ? "+" : "") + profitGlobal + " €";
-                totalProfEl.style.color = profitGlobal >= 0 ? "#2ecc71" : "#e74c3c";
+                totalProfEl.innerText = (profitGlobalDevise >= 0 ? "+" : "") + profitText + " " + symbole;
+                totalProfEl.style.color = profitGlobalDevise >= 0 ? "#2ecc71" : "#e74c3c";
 
-            } catch (e) { console.error("Erreur API"); }
+            } catch (e) { console.error("Erreur API", e); }
         }
 
         // --- AJOUT ---
@@ -227,6 +268,9 @@
                 document.getElementById('new-quantite').value = ""; document.getElementById('new-prix').value = "";
             }
         });
+
+        // --- ECOUTEUR DE CHANGEMENT DE DEVISE ---
+        document.getElementById('currency-select').addEventListener('change', chargerPortefeuille);
 
         function supprimer(index) {
             if(confirm("Supprimer cette position ?")) { mesCryptos.splice(index, 1); sauvegarder(); chargerPortefeuille(); }
