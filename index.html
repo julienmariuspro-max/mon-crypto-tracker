@@ -20,17 +20,8 @@
         .btn-refresh { background-color: #007bff; color: white; margin-bottom: 15px; }
         #theme-toggle { background-color: #6c757d; color: white; margin-bottom: 15px; }
         .delete-btn { background: none; border: none; font-size: 18px; color: #e74c3c; width: auto; }
-
-        .crypto-info { display: flex; align-items: center; gap: 10px; }
-        .crypto-logo { width: 24px; height: 24px; border-radius: 50%; }
-
-        #loader {
-            display: none; border: 4px solid rgba(255, 255, 255, 0.3); border-radius: 50%;
-            border-top: 4px solid #3498db; width: 30px; height: 30px;
-            animation: spin 1s linear infinite; margin: 10px auto;
-        }
+        #loader { display: none; border: 4px solid rgba(255, 255, 255, 0.3); border-radius: 50%; border-top: 4px solid #3498db; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 10px auto; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
         @media (min-width: 768px) { body { margin: 40px; } .form-group { display: flex; flex-direction: row; flex-wrap: wrap; } input, select { width: auto; margin-right: 10px; } button { width: auto; } }
     </style>
 </head>
@@ -50,9 +41,9 @@
     </div>
 
     <div id="summary">
-        <h2>Valeur Totale : <span id="total-valeur">...</span></h2>
+        <h2>Valeur Totale : <span id="total-valeur">0</span></h2>
         <div id="loader"></div>
-        <p>Profit Global (vs USDC) : <span id="total-profit" style="font-weight: bold;">0</span></p>
+        <p>Profit Global (vs USDC) : <span id="total-profit">0</span></p>
     </div>
 
     <div id="chart-section" style="max-height: 350px; display: flex; justify-content: center;">
@@ -61,7 +52,7 @@
 
     <div id="add-crypto-form">
         <h3>Ajouter une Position</h3>
-        <div class="form-group" style="display: flex; flex-direction: column;">
+        <div class="form-group">
             <input type="text" id="new-id" list="crypto-suggestions" placeholder="ID (ex: bitcoin)">
             <datalist id="crypto-suggestions"></datalist>
             <input type="text" id="new-nom" placeholder="Nom (ex: Bitcoin)">
@@ -80,7 +71,7 @@
                     <th>Crypto</th>
                     <th>Quantité</th>
                     <th>Prix Moyen (USDC)</th>
-                    <th>Valeur Actuelle</th>
+                    <th>Valeur</th>
                     <th>Évolution (%)</th>
                     <th>Action</th>
                 </tr>
@@ -95,6 +86,7 @@
 
         function sauvegarder() { localStorage.setItem('monPortfolio', JSON.stringify(mesCryptos)); }
 
+        // RECHERCHE
         const idInput = document.getElementById('new-id');
         idInput.addEventListener('input', async () => {
             const query = idInput.value.trim();
@@ -103,38 +95,35 @@
                 const res = await fetch(`https://api.coingecko.com/api/v3/search?query=${query}`);
                 const data = await res.json();
                 document.getElementById('crypto-suggestions').innerHTML = data.coins.slice(0, 5).map(c => `<option value="${c.id}">${c.name} (${c.symbol})</option>`).join('');
-            } catch (e) { console.error("Erreur recherche"); }
+            } catch (e) {}
         });
 
+        // GRAPHIQUE
         function mettreAJourGraphique(labels, valeurs) {
             const ctx = document.getElementById('portfolioChart').getContext('2d');
-            if (monGraphique) { monGraphique.destroy(); }
+            if (monGraphique) monGraphique.destroy();
             monGraphique = new Chart(ctx, {
                 type: 'doughnut',
                 data: {
                     labels: labels,
-                    datasets: [{
-                        data: valeurs,
-                        backgroundColor: ['#f1c40f', '#e67e22', '#e74c3c', '#9b59b6', '#3498db', '#2ecc71', '#1abc9c'],
-                        borderWidth: 0
-                    }]
+                    datasets: [{ data: valeurs, backgroundColor: ['#f1c40f', '#e67e22', '#e74c3c', '#9b59b6', '#3498db', '#2ecc71', '#1abc9c'], borderWidth: 0 }]
                 },
                 options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { color: '#e0e0e0' } } } }
             });
         }
 
+        // CHARGEMENT
         async function chargerPortefeuille() {
             const tableCorpus = document.getElementById('portfolio-table');
             const loader = document.getElementById('loader');
-            const deviseChoisie = document.getElementById('currency-select').value;
+            const devise = document.getElementById('currency-select').value;
             const symboles = { eur: '€', usd: '$', usdc: 'USDC', btc: '₿' };
-            const symbole = symboles[deviseChoisie];
-            const precision = deviseChoisie === 'btc' ? 6 : 2;
+            const symbole = symboles[devise];
+            const precision = devise === 'btc' ? 6 : 2;
 
             if (mesCryptos.length === 0) {
-                tableCorpus.innerHTML = "<tr><td colspan='6' style='text-align:center;'>Vide.</td></tr>";
+                tableCorpus.innerHTML = "<tr><td colspan='6' style='text-align:center;'>Portefeuille vide.</td></tr>";
                 document.getElementById('total-valeur').innerText = "0 " + symbole;
-                if (monGraphique) monGraphique.destroy();
                 return;
             }
 
@@ -142,69 +131,73 @@
 
             try {
                 const ids = mesCryptos.map(c => c.id).join(',');
-                // On repasse sur markets pour avoir les logos facilement
-                const response = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=${deviseChoisie === 'usdc' ? 'usd' : deviseChoisie}&ids=${ids}`);
-                const data = await response.json();
+                // Utilisation d'un appel simplifié et robuste
+                const res = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}`);
+                const data = await res.json();
 
-                mesCryptos.sort((a, b) => {
-                    const prixA = data.find(i => i.id === a.id)?.current_price || 0;
-                    const prixB = data.find(i => i.id === b.id)?.current_price || 0;
-                    return (prixB * b.quantite) - (prixA * a.quantite);
+                // On récupère aussi le taux de change si ce n'est pas USD/USDC
+                let taux = 1;
+                if (devise !== 'usdc' && devise !== 'usd') {
+                    const resTaux = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=usd-coin&vs_currencies=${devise}`);
+                    const dataTaux = await resTaux.json();
+                    taux = dataTaux['usd-coin'][devise];
+                }
+
+                // TRI PAR VALEUR
+                data.sort((a, b) => {
+                    const qteA = mesCryptos.find(c => c.id === a.id).quantite;
+                    const qteB = mesCryptos.find(c => c.id === b.id).quantite;
+                    return (b.current_price * qteB) - (a.current_price * qteA);
                 });
 
-                let sommeTotaleAffichage = 0, sommeInvestieUSDC = 0, sommeActuelleUSDC = 0;
-                let labelsGraph = [], valeursGraph = [];
-
+                let totalAffichage = 0, totalInvestUSDC = 0, totalActuelUSDC = 0;
+                let labels = [], valeurs = [];
                 tableCorpus.innerHTML = "";
-                mesCryptos.forEach(crypto => {
-                    const info = data.find(i => i.id === crypto.id);
-                    const prixActuelAffichage = info?.current_price || 0;
-                    
-                    // Note: On simplifie ici le calcul du profit USDC en utilisant le prix USD de l'API markets
-                    const valeurAffichage = crypto.quantite * prixActuelAffichage;
-                    const investissementUSDC = crypto.quantite * crypto.prixAchat;
-                    const evo = crypto.prixAchat > 0 ? (((prixActuelAffichage - crypto.prixAchat) / crypto.prixAchat) * 100).toFixed(2) : 0;
-                    
-                    sommeTotaleAffichage += valeurAffichage;
-                    sommeInvestieUSDC += investissementUSDC;
 
-                    labelsGraph.push(crypto.nom);
-                    valeursGraph.push(valeurAffichage.toFixed(2));
+                data.forEach(info => {
+                    const crypto = mesCryptos.find(c => c.id === info.id);
+                    const prixActuelUSDC = info.current_price;
+                    const valeurUSDC = crypto.quantite * prixActuelUSDC;
+                    const investUSDC = crypto.quantite * crypto.prixAchat;
+                    const evo = (((prixActuelUSDC - crypto.prixAchat) / crypto.prixAchat) * 100).toFixed(2);
+                    
+                    const valeurAffichage = valeurUSDC * taux;
+                    totalAffichage += valeurAffichage;
+                    totalInvestUSDC += investUSDC;
+                    totalActuelUSDC += valeurUSDC;
+
+                    labels.push(crypto.nom);
+                    valeurs.push(valeurAffichage.toFixed(2));
 
                     tableCorpus.innerHTML += `
                         <tr>
-                            <td>
-                                <div class="crypto-info">
-                                    <img src="${info?.image || ''}" class="crypto-logo" alt="">
-                                    <strong>${crypto.nom}</strong>
-                                </div>
-                            </td>
+                            <td><img src="${info.image}" width="20" style="vertical-align:middle; margin-right:8px;"><strong>${crypto.nom}</strong></td>
                             <td>${crypto.quantite}</td>
                             <td>${crypto.prixAchat.toFixed(2)}</td>
                             <td><strong>${valeurAffichage.toFixed(precision)} ${symbole}</strong></td>
                             <td style="color:${evo >= 0 ? '#2ecc71' : '#e74c3c'}; font-weight:bold;">${evo >= 0 ? '+' : ''}${evo}%</td>
-                            <td><button class="delete-btn" onclick="supprimer(${mesCryptos.indexOf(crypto)})">🗑️</button></td>
+                            <td><button class="delete-btn" onclick="supprimer('${crypto.id}')">🗑️</button></td>
                         </tr>`;
                 });
 
-                mettreAJourGraphique(labelsGraph, valeursGraph);
+                mettreAJourGraphique(labels, valeurs);
+                const profitUSDC = totalActuelUSDC - totalInvestUSDC;
+                const profitAffiche = profitUSDC * taux;
 
-                const profitAffiche = sommeTotaleAffichage - sommeInvestieUSDC;
+                document.getElementById('total-valeur').innerText = totalAffichage.toFixed(precision) + " " + symbole;
+                const profEl = document.getElementById('total-profit');
+                profEl.innerText = (profitAffiche >= 0 ? "+" : "") + profitAffiche.toFixed(precision) + " " + symbole;
+                profEl.style.color = profitAffiche >= 0 ? "#2ecc71" : "#e74c3c";
 
-                document.getElementById('total-valeur').innerText = sommeTotaleAffichage.toFixed(precision) + " " + symbole;
-                document.getElementById('total-profit').innerText = (profitAffiche >= 0 ? "+" : "") + profitAffiche.toFixed(precision) + " " + symbole;
-                document.getElementById('total-profit').style.color = profitAffiche >= 0 ? "#2ecc71" : "#e74c3c";
-
-            } catch (e) { 
-                console.error(e);
-                document.getElementById('total-valeur').innerText = "Erreur API";
+            } catch (e) {
+                document.getElementById('total-valeur').innerText = "Erreur API (Attendez 1 min)";
             } finally { loader.style.display = "none"; }
         }
 
         document.getElementById('add-btn').addEventListener('click', () => {
             const id = idInput.value, nom = document.getElementById('new-nom').value;
             const qte = parseFloat(document.getElementById('new-quantite').value), prix = parseFloat(document.getElementById('new-prix').value);
-            if(id && nom && !isNaN(qte)) {
+            if(id && nom && !isNaN(qte) && !isNaN(prix)) {
                 const ex = mesCryptos.find(c => c.id === id);
                 if (ex) { ex.prixAchat = ((ex.quantite * ex.prixAchat) + (qte * prix)) / (ex.quantite + qte); ex.quantite += qte; }
                 else { mesCryptos.push({ id, nom, quantite: qte, prixAchat: prix }); }
@@ -212,13 +205,11 @@
             }
         });
 
+        function supprimer(id) { if(confirm("Supprimer ?")) { mesCryptos = mesCryptos.filter(c => c.id !== id); sauvegarder(); chargerPortefeuille(); } }
         document.getElementById('currency-select').addEventListener('change', chargerPortefeuille);
-        function supprimer(i) { if(confirm("Supprimer ?")) { mesCryptos.splice(i, 1); sauvegarder(); chargerPortefeuille(); } }
-        document.getElementById('theme-toggle').addEventListener('click', function() {
-            document.body.classList.toggle('dark-mode');
-            this.innerText = document.body.classList.contains('dark-mode') ? "☀️ Mode Clair" : "🌙 Mode Sombre";
-        });
+        document.getElementById('theme-toggle').addEventListener('click', () => { document.body.classList.toggle('dark-mode'); });
         document.getElementById('refresh-btn').addEventListener('click', chargerPortefeuille);
+        
         chargerPortefeuille();
     </script>
 </body>
